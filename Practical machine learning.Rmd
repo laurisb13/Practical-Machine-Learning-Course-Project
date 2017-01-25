@@ -1,0 +1,156 @@
+---
+title: "Practical Machine Learning"
+author: "Laura Sanchez Burgos"
+date: "25 de enero de 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Project Overview
+
+## Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+## Aim of the project
+In this project, the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## Structure of the project:
+
+- Getting and cleaning the data
+- Decision tree
+- Random forest
+- Prediction for test set
+
+# Getting and cleaning the data
+
+## Data loading
+
+First of all, I will load the required packages:
+
+```{r, message=FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+```
+
+And download and read the files:
+
+```{r, message=FALSE}
+set.seed(12345)
+traindownload <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testdownload <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+train <- read.csv(url(traindownload), na.strings=c("NA","#DIV/0!",""))
+test <- read.csv(url(testdownload), na.strings=c("NA","#DIV/0!",""))
+```
+
+## Training set partition
+
+I will divide my training data into training and testing (I will call it validation to separate it from the real test data).
+
+```{r, message=FALSE}
+trainx <- createDataPartition(train$classe, p=0.6, list=FALSE)
+training <- train[trainx, ]
+validation <- train[-trainx, ]
+```
+
+## Data cleaning
+
+First, we will remove the near zero variables in the training and validation sets:
+
+```{r, message=FALSE}
+nzvt <- nearZeroVar(training, saveMetrics=TRUE)
+nzvv <- nearZeroVar(validation,saveMetrics=TRUE)
+training <- training[,nzvt$nzv==FALSE]
+validation <- validation[,nzvv$nzv==FALSE]
+```
+
+We need to remove variables that contain huge numbers of NA in training set, and the first column (not to interfere when building the algorithm):
+
+```{r, message=FALSE}
+training <- training[c(-1)]
+trainingx <- training
+for(i in 1:length(training)) {
+    if( sum( is.na( training[, i] ) ) /nrow(training) >= .7) {
+        for(j in 1:length(trainingx)) {
+            if( length( grep(names(training[i]), names(trainingx)[j]) ) == 1)  {
+                trainingx <- trainingx[ , -j]}}}}
+training <- trainingx
+rm(trainingx)
+```
+
+As we have different dimension in our data sets (see)
+
+```{r, message=FALSE}
+dim(training)
+dim(validation)
+dim(test)
+```
+
+We will let only the variables that are left in our training set for the other two data sets and coerce the data into the same type for the test set:
+
+```{r, message=FALSE}
+samev1 <- colnames(training)
+samev2 <- colnames(training[, -58]) #because test set does not have variable classe
+validation <- validation[samev1]
+test <- test[samev2]
+
+for (i in 1:length(test) ) {
+        for(j in 1:length(training)) {
+        if( length( grep(names(training[i]), names(test)[j]) ) ==1)  {
+            class(test[j]) <- class(training[i])} } }
+test <- rbind(training[2, -58] , test)
+test <- test[-1,]
+```
+
+Check again for dimensions and we will our data sets ready to be used:
+
+```{r, message=FALSE}
+dim(training)
+dim(validation)
+dim(test)
+```
+
+# Decision Tree
+
+We will first test a decision tree model using the method rpart, and visualize it in the following plot
+
+```{r, message=FALSE}
+set.seed(123)
+tree <- rpart(classe ~ ., data=training, method="class")
+fancyRpartPlot(tree)
+```
+
+Then, we will predict and test the model with our validation test set:
+
+```{r, message=FALSE}
+predtree <- predict(tree, validation, type = "class")
+confusionMatrix(predtree, validation$classe)
+```
+
+
+# Random Forest
+
+We will secondly test a random forest model using the method randomForest, and we will predict and test the model with our validation test set:
+
+```{r, message=FALSE}
+set.seed(123)
+forest <- randomForest(classe ~ ., data=training)
+predforest <- predict(forest, validation, type = "class")
+confusionMatrix(predforest, validation$classe)
+```
+
+# Prediction for test set
+
+We have observed a higher accuracy on the random forest model. In that model, the expected out-of-sample error was 0.01 (100-accuracy), which makes it a superior model for prediction of exercise quality compared to decision trees.
+
+For predicting in the test set:
+
+```{r, message=FALSE}
+predtest <- predict(forest, test, type = "class")
+predtest
